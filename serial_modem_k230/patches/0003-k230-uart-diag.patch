@@ -1,0 +1,77 @@
+diff --git a/app/Kconfig b/app/Kconfig
+index 6069535..e262f04 100644
+--- a/app/Kconfig
++++ b/app/Kconfig
+@@ -79,6 +79,15 @@ config SM_UART_TX_BUF_SIZE
+ 	  If the buffers are full, will send synchronously.
+ 	  These buffers are not used when CMUX is in use.
+ 
++config SM_K230_UART_DIAG
++	bool "K230 UART RX/TX diagnostic logs"
++	default n
++	help
++	  Emit short UART RX/TX hexdumps for the selected ncs,sm-uart to the
++	  Zephyr log backend. This is intended for first board bring-up, where
++	  UART2 is monitored externally and K230 sends AT commands on UART1.
++	  Disable this after the physical UART link is confirmed.
++
+ config SM_URC_BUFFER_SIZE
+ 	int "TX buffer size for unsolicited result codes (URC)"
+ 	default 4096
+diff --git a/app/src/sm_uart_handler.c b/app/src/sm_uart_handler.c
+index ed34699..bd3a7ab 100644
+--- a/app/src/sm_uart_handler.c
++++ b/app/src/sm_uart_handler.c
+@@ -59,6 +59,21 @@ enum sm_uart_state {
+ };
+ static atomic_t uart_state;
+ 
++#if IS_ENABLED(CONFIG_SM_K230_UART_DIAG)
++static void k230_uart_diag_hexdump(const char *prefix, const uint8_t *buf, size_t len)
++{
++	size_t diag_len = len;
++
++	if (diag_len > 32) {
++		diag_len = 32;
++	}
++	LOG_HEXDUMP_WRN(buf, diag_len, prefix);
++	if (len > diag_len) {
++		LOG_WRN("%s truncated: total=%u shown=%u", prefix, (unsigned int)len, (unsigned int)diag_len);
++	}
++}
++#endif
++
+ enum sm_pipe_state {
+ 	SM_PIPE_STATE_INIT_BIT,
+ 	SM_PIPE_STATE_OPEN_BIT,
+@@ -306,6 +320,9 @@ static void uart_callback(const struct device *dev, struct uart_event *evt, void
+ 		rx_buf_ref(evt->data.rx.buf);
+ 		rx_event.buf = &evt->data.rx.buf[evt->data.rx.offset];
+ 		rx_event.len = evt->data.rx.len;
++#if IS_ENABLED(CONFIG_SM_K230_UART_DIAG)
++		k230_uart_diag_hexdump("K230 UART RX", rx_event.buf, rx_event.len);
++#endif
+ 		err = k_msgq_put(&rx_event_queue, &rx_event, K_NO_WAIT);
+ 		if (err) {
+ 			LOG_ERR("RX event queue full, dropped %zu bytes", evt->data.rx.len);
+@@ -382,6 +399,9 @@ static int sm_uart_handler_enable(void)
+ 	LOG_INF("UART baud: %d d/p/s-bits: %d/%d/%d HWFC: %d",
+ 		cfg.baudrate, cfg.data_bits, cfg.parity,
+ 		cfg.stop_bits, cfg.flow_ctrl);
++#if IS_ENABLED(CONFIG_SM_K230_UART_DIAG)
++	LOG_WRN("K230 UART diagnostics enabled on %s", sm_uart_dev->name);
++#endif
+ 
+ 	/* Wait for the UART line to become valid */
+ 	start_time = k_uptime_get_32();
+@@ -480,6 +501,10 @@ static int pipe_transmit(void *data, const uint8_t *buf, size_t size)
+ 		return -EINVAL;
+ 	}
+ 
++#if IS_ENABLED(CONFIG_SM_K230_UART_DIAG)
++	k230_uart_diag_hexdump("K230 UART TX", buf, size);
++#endif
++
+ 	while (sent < size) {
+ 		ret = ring_buf_put(&tx_buf, buf + sent, size - sent);
+ 		if (ret) {

@@ -1,0 +1,159 @@
+/*
+ * K230 <-> nRF9151 Serial Modem overlay.
+ *
+ * Hardware naming from the K230 keyboard/LTE board:
+ * - UART1 TX1=P0.27, RX1=P0.26: AT command link to K230, 115200 8N1.
+ * - UART2 TX2=P0.29, RX2=P0.28: log output, 115200 8N1.
+ * - LED=P0.23: K230 run heartbeat.
+ *
+ * The K230 board does not route RTS/CTS or DTR/RI, so DTR UART power
+ * management is disabled and UART0 is kept as a plain always-on UART.
+ */
+
+/ {
+	chosen {
+		ncs,sm-uart = &uart0;
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+		zephyr,uart-mcumgr = &uart1;
+	};
+
+	aliases {
+		k230-run-led = &k230_run_led;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		k230_run_led: k230_run_led {
+			gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>;
+			label = "K230_NRF9151_RUN_LED";
+		};
+	};
+};
+
+&dtr_uart0 {
+	status = "disabled";
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+	/delete-property/ hw-flow-control;
+	pinctrl-0 = <&uart0_k230_default>;
+	pinctrl-1 = <&uart0_k230_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&uart1 {
+	status = "okay";
+	current-speed = <115200>;
+	/delete-property/ hw-flow-control;
+	pinctrl-0 = <&uart1_k230_default>;
+	pinctrl-1 = <&uart1_k230_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&gpio0 {
+	status = "okay";
+	/* No DTR pin is connected on K230, so do not keep the DK P0.8 wake source. */
+	sense-edge-mask = <0>;
+};
+
+&pinctrl {
+	uart0_k230_default: uart0_k230_default {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 27)>;
+		};
+		group2 {
+			psels = <NRF_PSEL(UART_RX, 0, 26)>;
+			bias-pull-up;
+		};
+	};
+
+	uart0_k230_sleep: uart0_k230_sleep {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 27)>,
+				<NRF_PSEL(UART_RX, 0, 26)>;
+			low-power-enable;
+		};
+	};
+
+	uart1_k230_default: uart1_k230_default {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 29)>;
+		};
+		group2 {
+			psels = <NRF_PSEL(UART_RX, 0, 28)>;
+			bias-pull-up;
+		};
+	};
+
+	uart1_k230_sleep: uart1_k230_sleep {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 29)>,
+				<NRF_PSEL(UART_RX, 0, 28)>;
+			low-power-enable;
+		};
+	};
+};
+
+/*
+ * The upstream Serial LTE Modem nRF9151 DK overlay switches the flash layout to
+ * B0/MCUboot slots and places the application at 0x20000. The K230 bring-up
+ * baseline is intentionally no-sysbuild, so the generated tfm_merged.hex must
+ * be directly bootable when flashed alone.
+ */
+/delete-node/ &b0_partition;
+/delete-node/ &boot_partition;
+/delete-node/ &slot0_partition;
+/delete-node/ &slot1_partition;
+/delete-node/ &s1_partition;
+/delete-node/ &storage_partition;
+
+&flash0 {
+	partitions {
+		ranges;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		slot0_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-0";
+			reg = <0x00000000 0xf0000>;
+			ranges = <0x0 0x00000000 0xf0000>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			slot0_s_partition: partition@0 {
+				compatible = "zephyr,mapped-partition";
+				label = "image-0-secure";
+				reg = <0x00000000 0x8000>;
+			};
+
+			slot0_ns_partition: partition@8000 {
+				compatible = "zephyr,mapped-partition";
+				label = "image-0-nonsecure";
+				reg = <0x00008000 0xe8000>;
+			};
+		};
+
+		/*
+		 * Compile-time placeholder for MCUBoot helper code kept by the
+		 * upstream Serial Modem app. K230 no-sysbuild flashing does not boot
+		 * from or update this slot.
+		 */
+		slot1_partition: partition@f0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-1";
+			reg = <0x000f0000 0x8000>;
+		};
+
+		storage_partition: partition@f8000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x000f8000 0x8000>;
+		};
+	};
+};
+
+#include <samples/cellular/nrf91_sram_partitions.dtsi>

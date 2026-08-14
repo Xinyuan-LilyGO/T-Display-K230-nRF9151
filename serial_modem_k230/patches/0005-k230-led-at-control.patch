@@ -1,0 +1,148 @@
+diff --git a/app/src/main.c b/app/src/main.c
+index c4cbf03..d1b4b95 100644
+--- a/app/src/main.c
++++ b/app/src/main.c
+@@ -20,6 +20,7 @@
+ #include "sm_log.h"
+ #include <zephyr/device.h>
+ #include <zephyr/drivers/gpio.h>
++#include <zephyr/sys/atomic.h>
+ 
+ LOG_MODULE_REGISTER(sm, CONFIG_SM_LOG_LEVEL);
+ 
+@@ -33,22 +34,100 @@ NRF_MODEM_LIB_ON_DFU_RES(main_dfu_hook, on_modem_dfu_res, NULL);
+ #if DT_NODE_HAS_STATUS(K230_RUN_LED_NODE, okay)
+ static const struct gpio_dt_spec k230_run_led = GPIO_DT_SPEC_GET(K230_RUN_LED_NODE, gpios);
+ 
++#define K230_RUN_LED_MODE_OFF  0
++#define K230_RUN_LED_MODE_ON   1
++#define K230_RUN_LED_MODE_AUTO 2
++
++static atomic_t k230_run_led_mode = ATOMIC_INIT(K230_RUN_LED_MODE_AUTO);
++static atomic_t k230_run_led_gnss_fix_seen = ATOMIC_INIT(0);
++
++void k230_run_led_gnss_start_notify(void)
++{
++	atomic_set(&k230_run_led_gnss_fix_seen, 0);
++}
++
++void k230_run_led_gnss_fix_notify(void)
++{
++	atomic_set(&k230_run_led_gnss_fix_seen, 1);
++}
++
+ static void k230_run_led_thread(void)
+ {
+ 	if (!gpio_is_ready_dt(&k230_run_led)) {
+ 		LOG_WRN("K230 run LED GPIO is not ready");
+ 		return;
+ 	}
+ 
+-	(void)gpio_pin_configure_dt(&k230_run_led, GPIO_OUTPUT_INACTIVE);
++	(void)gpio_pin_configure_dt(&k230_run_led, GPIO_OUTPUT_ACTIVE);
+ 	while (true) {
+-		(void)gpio_pin_set_dt(&k230_run_led, 1);
+-		k_msleep(300);
+-		(void)gpio_pin_set_dt(&k230_run_led, 0);
+-		k_msleep(700);
++		int mode = atomic_get(&k230_run_led_mode);
++		bool fix_seen = atomic_get(&k230_run_led_gnss_fix_seen) != 0;
++
++		if (mode == K230_RUN_LED_MODE_OFF) {
++			(void)gpio_pin_set_dt(&k230_run_led, 0);
++			k_msleep(200);
++		} else if (mode == K230_RUN_LED_MODE_ON ||
++			   (mode == K230_RUN_LED_MODE_AUTO && !fix_seen)) {
++			(void)gpio_pin_set_dt(&k230_run_led, 1);
++			k_msleep(200);
++		} else {
++			(void)gpio_pin_set_dt(&k230_run_led, 1);
++			k_msleep(300);
++			(void)gpio_pin_set_dt(&k230_run_led, 0);
++			k_msleep(700);
++		}
+ 	}
+ }
+ K_THREAD_DEFINE(k230_run_led_tid, 512, k230_run_led_thread, NULL, NULL, NULL, 7, 0, 0);
++
++SM_AT_CMD_CUSTOM(xk230led, "AT#XK230LED", handle_at_k230_led);
++static int handle_at_k230_led(enum at_parser_cmd_type cmd_type, struct at_parser *parser,
++			      uint32_t param_count)
++{
++	uint16_t mode;
++	int err;
++
++	switch (cmd_type) {
++	case AT_PARSER_CMD_TYPE_SET:
++		if (param_count != 2) {
++			return -EINVAL;
++		}
++		err = at_parser_num_get(parser, 1, &mode);
++		if (err || mode > K230_RUN_LED_MODE_AUTO) {
++			return -EINVAL;
++		}
++		atomic_set(&k230_run_led_mode, mode);
++		if (mode == K230_RUN_LED_MODE_OFF) {
++			(void)gpio_pin_set_dt(&k230_run_led, 0);
++		} else if (mode == K230_RUN_LED_MODE_ON) {
++			(void)gpio_pin_set_dt(&k230_run_led, 1);
++		}
++		break;
++
++	case AT_PARSER_CMD_TYPE_READ:
++		rsp_send("\r\n#XK230LED: %d,%d\r\n",
++			 (int)atomic_get(&k230_run_led_mode),
++			 (int)atomic_get(&k230_run_led_gnss_fix_seen));
++		break;
++
++	case AT_PARSER_CMD_TYPE_TEST:
++		rsp_send("\r\n#XK230LED: (0,1,2)\r\n");
++		break;
++
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++#else
++void k230_run_led_gnss_start_notify(void)
++{
++}
++
++void k230_run_led_gnss_fix_notify(void)
++{
++}
+ #endif
+ 
+ static void on_modem_lib_init(int ret, void *ctx)
+diff --git a/app/src/sm_at_gnss.c b/app/src/sm_at_gnss.c
+index a4c3799..6fc41b6 100644
+--- a/app/src/sm_at_gnss.c
++++ b/app/src/sm_at_gnss.c
+@@ -65,6 +65,9 @@ static struct k_work pgps_coap_req_work;
+ 
+ static struct k_work gnss_fix_send_work;
+ 
++void k230_run_led_gnss_start_notify(void);
++void k230_run_led_gnss_fix_notify(void);
++
+ static int64_t gnss_ttff_start;
+ 
+ static bool gnss_running;
+@@ -300,6 +303,7 @@ static int gnss_startup(void)
+ 	}
+ 	gnss_running = true;
+ 	gnss_ttff_start = k_uptime_get();
++	k230_run_led_gnss_start_notify();
+ 	gnss_status_set(GNSS_STATUS_STARTED);
+ 	LOG_INF("GNSS started (with%s cloud assistance).", gnss_cloud_assistance ? "" : "out");
+ 
+@@ -703,6 +707,7 @@ static void on_gnss_evt_fix(void)
+ 		gnss_ttff_start = 0;
+ 	}
+ 
++	k230_run_led_gnss_fix_notify();
+ 	k_work_submit_to_queue(&sm_work_q, &gnss_fix_send_work);
+ }
+ 

@@ -1,0 +1,197 @@
+diff --git a/app/Kconfig b/app/Kconfig
+index 2f77abc..3e5dbe9 100644
+--- a/app/Kconfig
++++ b/app/Kconfig
+@@ -340,13 +340,33 @@ endif # SM_MQTTC
+ 
+ if SM_GNSS
+ 
++config SM_GNSS_NMEA_URC
++	bool "Send GNSS NMEA sentences to the AT host as URCs"
++	default n
++	help
++	  If enabled, GNSS NMEA data is emitted to the active Serial Modem AT
++	  pipe as #XGNSSNMEA unsolicited notifications. This is useful when an
++	  external host such as K230 needs raw NMEA data on the same UART as AT
++	  commands instead of reading Serial Modem debug logs.
++
++config SM_GNSS_NMEA_URC_DEFAULT
++	bool "Enable GNSS NMEA URC output by default"
++	default n
++	depends on SM_GNSS_NMEA_URC
++	help
++	  If enabled, #XGNSSNMEA unsolicited notifications are active when
++	  Serial Modem starts. The host can change this at runtime with
++	  AT#XNMEA=<0|1>.
++
+ config SM_GNSS_OUTPUT_NMEA_SATELLITES
+ 	bool "Output NMEA satellite messages (GSV, GSA)"
+-	default y if SM_LOG_LEVEL_DBG
+-	depends on SM_LOG_LEVEL_DBG
++	default y if SM_LOG_LEVEL_DBG
++	depends on SM_LOG_LEVEL_DBG || SM_GNSS_NMEA_URC
+ 	help
+ 	  If enabled, NMEA messages that pertain to the satellites will be output
+-	  along with the other NMEA messages. Those are output in debug logs.
++	  along with the other NMEA messages. When SM_LOG_LEVEL_DBG is enabled
++	  they are output in debug logs. When SM_GNSS_NMEA_URC is enabled they
++	  are output as #XGNSSNMEA URCs on the active AT pipe.
+ 
+ config SM_PGPS_INJECT_FIX_DATA
+ 	bool "Inject the data obtained when acquiring a fix"
+diff --git a/app/src/main.c b/app/src/main.c
+index 432dfb0..c4cbf03 100644
+--- a/app/src/main.c
++++ b/app/src/main.c
+@@ -18,6 +18,8 @@
+ #include "sm_ctrl_pin.h"
+ #include "sm_uart_handler.h"
+ #include "sm_log.h"
++#include <zephyr/device.h>
++#include <zephyr/drivers/gpio.h>
+ 
+ LOG_MODULE_REGISTER(sm, CONFIG_SM_LOG_LEVEL);
+ 
+@@ -29,5 +31,28 @@ NRF_MODEM_LIB_ON_INIT(lwm2m_init_hook, on_modem_lib_init, NULL);
+ NRF_MODEM_LIB_ON_DFU_RES(main_dfu_hook, on_modem_dfu_res, NULL);
+ 
++#define K230_RUN_LED_NODE DT_ALIAS(k230_run_led)
++
++#if DT_NODE_HAS_STATUS(K230_RUN_LED_NODE, okay)
++static const struct gpio_dt_spec k230_run_led = GPIO_DT_SPEC_GET(K230_RUN_LED_NODE, gpios);
++
++static void k230_run_led_thread(void)
++{
++	if (!gpio_is_ready_dt(&k230_run_led)) {
++		LOG_WRN("K230 run LED GPIO is not ready");
++		return;
++	}
++
++	(void)gpio_pin_configure_dt(&k230_run_led, GPIO_OUTPUT_INACTIVE);
++	while (true) {
++		(void)gpio_pin_set_dt(&k230_run_led, 1);
++		k_msleep(300);
++		(void)gpio_pin_set_dt(&k230_run_led, 0);
++		k_msleep(700);
++	}
++}
++K_THREAD_DEFINE(k230_run_led_tid, 512, k230_run_led_thread, NULL, NULL, NULL, 7, 0, 0);
++#endif
++
+ static void on_modem_lib_init(int ret, void *ctx)
+ {
+ 	ARG_UNUSED(ctx);
+diff --git a/app/src/sm_at_gnss.c b/app/src/sm_at_gnss.c
+index 653ef6f..6d950cf 100644
+--- a/app/src/sm_at_gnss.c
++++ b/app/src/sm_at_gnss.c
+@@ -85,6 +85,10 @@ static struct modem_pipe *gnss_pipe;
+  */
+ static uint16_t gnss_cloud_assistance;
+ 
++#if defined(CONFIG_SM_GNSS_NMEA_URC)
++static bool gnss_nmea_urc_enabled = IS_ENABLED(CONFIG_SM_GNSS_NMEA_URC_DEFAULT);
++#endif
++
+ /* If true, indicates that the NRF_MODEM_GNSS_EVT_AGNSS_REQ event
+  * was received and ignored due to cloud assistance being disabled.
+  * It has been observed that the event is not sent again after a restart of GNSS, so
+@@ -251,7 +255,7 @@ static int gnss_startup(void)
+ 
+ #endif /* CONFIG_SM_NRF_CLOUD */
+ 
+-#if defined(CONFIG_SM_LOG_LEVEL_DBG)
++#if defined(CONFIG_SM_LOG_LEVEL_DBG) || defined(CONFIG_SM_GNSS_NMEA_URC)
+ 	uint16_t nmea_mask = NRF_MODEM_GNSS_NMEA_GGA_MASK
+ 			     | NRF_MODEM_GNSS_NMEA_GLL_MASK
+ 			     | NRF_MODEM_GNSS_NMEA_RMC_MASK;
+@@ -268,7 +272,7 @@ static int gnss_startup(void)
+ 		LOG_ERR("Failed to set NMEA mask. (%d)", ret);
+ 		return ret;
+ 	}
+-#endif /* CONFIG_SM_LOG_LEVEL_DBG */
++#endif /* CONFIG_SM_LOG_LEVEL_DBG || CONFIG_SM_GNSS_NMEA_URC */
+ 
+ 	ret = nrf_modem_gnss_start();
+ 	if (ret) {
+@@ -528,7 +532,7 @@ static void pgps_event_handler(struct nrf_cloud_pgps_event *event)
+ 
+ #endif /* CONFIG_SM_NRF_CLOUD */
+ 
+-#if defined(CONFIG_SM_LOG_LEVEL_DBG)
++#if defined(CONFIG_SM_LOG_LEVEL_DBG) || defined(CONFIG_SM_GNSS_NMEA_URC)
+ static void on_gnss_evt_nmea(void)
+ {
+ 	int err;
+@@ -546,8 +550,15 @@ static void on_gnss_evt_nmea(void)
+ 	len -= 2;
+ 	assert(!strcmp(nmea_str + len, "\r\n"));
+ 	LOG_DBG("%.*s", len, nmea_str);
++#if defined(CONFIG_SM_GNSS_NMEA_URC)
++	if (gnss_nmea_urc_enabled) {
++		urc_send_to(gnss_pipe, "\r\n#XGNSSNMEA: %.*s\r\n", len, nmea_str);
++	}
++#endif
+ }
++#endif /* CONFIG_SM_LOG_LEVEL_DBG || CONFIG_SM_GNSS_NMEA_URC */
+ 
++#if defined(CONFIG_SM_LOG_LEVEL_DBG)
+ static void on_gnss_evt_pvt(void)
+ {
+ 	struct nrf_modem_gnss_pvt_data_frame pvt;
+@@ -725,10 +737,12 @@ static void gnss_event_handler(int event)
+ 	switch (event) {
+ #if defined(CONFIG_SM_LOG_LEVEL_DBG)
+ 	case NRF_MODEM_GNSS_EVT_PVT:
+ 		on_gnss_evt_pvt();
+ 		break;
++#endif
++#if defined(CONFIG_SM_LOG_LEVEL_DBG) || defined(CONFIG_SM_GNSS_NMEA_URC)
+ 	case NRF_MODEM_GNSS_EVT_NMEA:
+ 		on_gnss_evt_nmea();
+ 		break;
+ #endif
+ 	case NRF_MODEM_GNSS_EVT_FIX:
+@@ -763,6 +777,42 @@ static void gnss_event_handler(int event)
+ 	}
+ }
+ 
++#if defined(CONFIG_SM_GNSS_NMEA_URC)
++SM_AT_CMD_CUSTOM(xnmea, "AT#XNMEA", handle_at_gnss_nmea);
++static int handle_at_gnss_nmea(enum at_parser_cmd_type cmd_type, struct at_parser *parser,
++			       uint32_t param_count)
++{
++	uint16_t enable;
++	int err;
++
++	switch (cmd_type) {
++	case AT_PARSER_CMD_TYPE_SET:
++		if (param_count != 2) {
++			return -EINVAL;
++		}
++		err = at_parser_num_get(parser, 1, &enable);
++		if (err || enable > 1) {
++			return -EINVAL;
++		}
++		gnss_nmea_urc_enabled = enable;
++		break;
++
++	case AT_PARSER_CMD_TYPE_READ:
++		rsp_send("\r\n#XNMEA: %d\r\n", gnss_nmea_urc_enabled ? 1 : 0);
++		break;
++
++	case AT_PARSER_CMD_TYPE_TEST:
++		rsp_send("\r\n#XNMEA: (0,1)\r\n");
++		break;
++
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++#endif
++
+ SM_AT_CMD_CUSTOM(xgnss, "AT#XGNSS", handle_at_gnss);
+ static int handle_at_gnss(enum at_parser_cmd_type cmd_type, struct at_parser *parser,
+ 			 uint32_t param_count)

@@ -1,0 +1,108 @@
+diff --git a/app/CMakeLists.txt b/app/CMakeLists.txt
+index 418111a..8c3455f 100644
+--- a/app/CMakeLists.txt
++++ b/app/CMakeLists.txt
+@@ -19,7 +19,11 @@ target_sources(app PRIVATE src/sm_at_commands.c)
+ target_sources(app PRIVATE src/sm_at_socket.c)
+ target_sources(app PRIVATE src/sm_at_icmp.c)
+ target_sources(app PRIVATE src/sm_at_fota.c)
+-target_sources(app PRIVATE src/sm_at_dfu.c)
++if(CONFIG_SM_XDFU)
++	target_sources(app PRIVATE src/sm_at_dfu.c)
++else()
++	target_sources(app PRIVATE src/sm_at_dfu_stub.c)
++endif()
+ target_sources(app PRIVATE src/sm_uart_handler.c)
+ target_sources(app PRIVATE src/sm_log.c)
+ # NORDIC SDK APP END
+diff --git a/app/Kconfig b/app/Kconfig
+index 3e5dbe9..6069535 100644
+--- a/app/Kconfig
++++ b/app/Kconfig
+@@ -287,6 +287,14 @@ config SM_MQTTC
+ 	select MQTT_LIB_TLS
+ 	select EXPERIMENTAL
+ 
++config SM_XDFU
++	bool "XDFU AT command support"
++	default y
++	help
++	  Enable Serial Modem AT#XDFU* update commands. K230 disables this for
++	  the first no-sysbuild bring-up firmware because MCUboot DFU targets are
++	  only complete in the official sysbuild/bootloader flow.
++
+ config SM_FULL_FOTA
+ 	bool "Full modem FOTA support"
+ 
+diff --git a/app/src/sm_at_dfu_stub.c b/app/src/sm_at_dfu_stub.c
+new file mode 100644
+index 0000000..0c62fe2
+--- /dev/null
++++ b/app/src/sm_at_dfu_stub.c
+@@ -0,0 +1,66 @@
++/*
++ * K230 Serial Modem DFU stub.
++ *
++ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
++ */
++
++#include <errno.h>
++#include <stdbool.h>
++#include <stddef.h>
++
++#include <zephyr/logging/log.h>
++#include <zephyr/sys/util.h>
++
++#include "sm_at_dfu.h"
++
++LOG_MODULE_REGISTER(sm_dfu_stub, CONFIG_SM_LOG_LEVEL);
++
++bool sm_bootloader_mode_requested;
++bool sm_bootloader_mode_enabled;
++int full_mfw_dfu_segment_type;
++
++int bootloader_mode_request(bool enable)
++{
++	if (enable) {
++		LOG_WRN("XDFU bootloader mode is disabled in this K230 build");
++		return -ENOTSUP;
++	}
++
++	sm_bootloader_mode_requested = false;
++	sm_bootloader_mode_enabled = false;
++
++	return 0;
++}
++
++static int xdfu_disabled(void)
++{
++	LOG_WRN("AT#XDFU commands are disabled in this K230 build");
++	return -ENOTSUP;
++}
++
++int sm_at_handle_xdfu_init(char *buf, size_t len, char *at_cmd)
++{
++	ARG_UNUSED(buf);
++	ARG_UNUSED(len);
++	ARG_UNUSED(at_cmd);
++
++	return xdfu_disabled();
++}
++
++int sm_at_handle_xdfu_write(char *buf, size_t len, char *at_cmd)
++{
++	ARG_UNUSED(buf);
++	ARG_UNUSED(len);
++	ARG_UNUSED(at_cmd);
++
++	return xdfu_disabled();
++}
++
++int sm_at_handle_xdfu_apply(char *buf, size_t len, char *at_cmd)
++{
++	ARG_UNUSED(buf);
++	ARG_UNUSED(len);
++	ARG_UNUSED(at_cmd);
++
++	return xdfu_disabled();
++}

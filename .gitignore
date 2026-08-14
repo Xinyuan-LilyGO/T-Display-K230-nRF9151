@@ -1,0 +1,10 @@
+build/
+work/
+ncs/
+third_party/*
+!third_party/
+!third_party/ncs-serial-modem/
+*.old.*
+*.log
+.west/
+.vscode/
