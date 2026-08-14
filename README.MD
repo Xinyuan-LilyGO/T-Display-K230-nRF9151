@@ -179,7 +179,7 @@ build/at_client_k230_dual_uart/at_client_k230/zephyr/tfm_merged.hex
 
 - nRF Connect Programmer flashing demonstration (Note: The step in the video involving writing **mfw_nrf91x1_2.0.4.zip** is not required unless the device has been fully erased or the LTE firmware package has been overwritten by another firmware package.)
 
-  <video src="./images/nRF-ConnectProgrammer.mp4" controls width="100%"></video>
+  <video src="https://github.com/user-attachments/assets/668f1def-420b-4c83-ae40-9d57c0a985e4" controls width="100%"></video>
 
 ## K230 Runtime Test
 

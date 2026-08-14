@@ -174,7 +174,7 @@ build/at_client_k230_dual_uart/at_client_k230/zephyr/tfm_merged.hex
 
 - nRF Connect Programmer烧录演示(视频第二步写入**mfw_nrf91x1_2.0.4.zip**是不需要操作的,除非被全擦除了,或者写了其他的固件包覆盖才需要重新写LTE固件包)
   
-  <video src="./images/nRF-ConnectProgrammer.mp4" controls width="100%"></video>
+  <video src="https://github.com/user-attachments/assets/668f1def-420b-4c83-ae40-9d57c0a985e4" controls width="100%"></video>
 
 ## K230 运行测试
 
