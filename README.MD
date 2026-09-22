@@ -171,6 +171,7 @@ build/at_client_k230_dual_uart/at_client_k230/zephyr/tfm_merged.hex
 
 
 - Flash the generated `tfm_merged.hex` using nRF Connect Programmer, **J-Link**, or **DAPLink/CMSIS-DAP**. If using **nRF Connect Programmer**, **J-Link** must be used for programming.
+- For the **DAPLink/CMSIS-DAP** route, [docs/FLASH_PYOCD.MD](docs/FLASH_PYOCD.MD) gives a complete pyOCD procedure — wiring, flash commands and verification. No J-Link is required, and the host may be x86_64 or arm64.
 - During programming, K230 GPIO2 must be set to high level on the K230 side before powering on the nRF9151.
 - The programming interface, **SWD**, can only be accessed by opening the keyboard panel. Connect only **SWDIO**, **SWCLK**, and **GND** pins during programming. Do not connect a 3V3 power supply to J-Link or other programmers.
 - The programming interface is shown in the image below.
@@ -242,7 +243,12 @@ k230_dual_uart_pins.overlay     nRF9151 UART1/UART2/LED overlay
 ## Known Notes
 
 - `mfw_nrf91x1_*.zip` is Nordic modem firmware. It is separate from
-  `tfm_merged.hex`; update it with Nordic tooling when required.
+  `tfm_merged.hex`; update it with Nordic tooling when required. pyOCD can also
+  write it over a CMSIS-DAP probe (`nrf91-update-modem-fw`), so a J-Link is not
+  required for this either — see [docs/FLASH_PYOCD.MD](docs/FLASH_PYOCD.MD).
+- Erasing with `--chip` (application core only) leaves the modem firmware in
+  place, so a modem rewrite is normally unnecessary. A `recover`/mass erase is
+  what makes one necessary.
 - The default factory firmware includes **[mfw_nrf91x1_2.0.4.zip](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.4.zip)**.
 - Hardware flow control must remain disabled because the K230 board only wires
   TX/RX for this link.
