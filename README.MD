@@ -136,6 +136,12 @@ serial_modem_k230/patches/0004-k230-gnss-nmea-urc-worker.patch
 serial_modem_k230/patches/0005-k230-led-at-control.patch
 ```
 
+The build also loads the profile's `nrf-device-provisioning.conf` overlay.
+This enables the host-driven `AT#XNRFPROV` command used to install nRF Cloud
+credentials on a claimed device. It is required for the automatic onboarding
+flow, but A-GNSS itself is enabled separately by `CONFIG_NRF_CLOUD_AGNSS` and
+requires an active `AT#XNRFCLOUD=1` session.
+
 Important behavior:
 
 - UART1 is the K230 AT command link.

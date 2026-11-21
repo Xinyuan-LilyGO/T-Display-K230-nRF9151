@@ -133,6 +133,11 @@ serial_modem_k230/patches/0004-k230-gnss-nmea-urc-worker.patch
 serial_modem_k230/patches/0005-k230-led-at-control.patch
 ```
 
+构建还会加载 profile 自带的 `nrf-device-provisioning.conf` overlay，用于启用
+主机控制的 `AT#XNRFPROV` 命令，为已在 nRF Cloud 中 claim 的设备写入云端凭据。
+它是自动 onboarding 流程所必需的，但 A-GNSS 由 `CONFIG_NRF_CLOUD_AGNSS`
+单独启用，并且仍要求先通过 `AT#XNRFCLOUD=1` 建立云连接。
+
 关键行为：
 
 - UART1 是 K230 AT 命令链路。
@@ -159,7 +164,7 @@ build/at_client_k230_dual_uart/at_client_k230/zephyr/tfm_merged.hex
 ## 烧录
 
 > [!IMPORTANT]
-> 
+>
 > 1. 烧录时必须保持与K230主机的连接,K230侧必须将GPIO2设置为高电平
 > 2. 烧录时只接**SWDIO**,**SWCLK**,**GND**三个Pin,不要接**3.3V**
 > 3. 无论插不插SIM卡都可以烧录,烧录和SIM卡没有关系
@@ -286,4 +291,4 @@ k230_dual_uart_pins.overlay     nRF9151 UART1/UART2/LED overlay
 > [!IMPORTANT]
 > 
 > 默认出厂写入的固件是LTE 固件
-> 
+>

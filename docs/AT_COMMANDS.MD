@@ -147,11 +147,44 @@ CONFIG_SM_COAPC=y
 CONFIG_SM_GNSS=y
 CONFIG_SM_NRF_CLOUD=y
 CONFIG_NRF_CLOUD_AGNSS=y
+CONFIG_NRF_PROVISIONING=y
 ```
 
-This means SMS, MQTT, HTTP, CoAP, GNSS, and nRF Cloud A-GNSS command groups are
-compiled in. The exact command syntax for those groups is maintained by Nordic
-in the Serial LTE Modem documentation under `third_party/ncs-serial-modem/doc/app/`.
+This means SMS, MQTT, HTTP, CoAP, GNSS, nRF Cloud A-GNSS, and nRF Device
+Provisioning command groups are compiled in. A-GNSS still requires valid nRF
+Cloud credentials and an active `AT#XNRFCLOUD=1` session; provisioning installs
+those credentials for a claimed device but is not itself a GNSS assistance mode.
+The exact command syntax is maintained by Nordic in the Serial LTE Modem
+documentation under `third_party/ncs-serial-modem/doc/app/`.
+
+### nRF Cloud provisioning and A-GNSS
+
+The K230 build loads both `k230_serial_modem.conf` and
+`serial_modem_k230/nrf-device-provisioning.conf`. This enables the host-driven
+provisioning flow:
+
+```text
+AT#XNRFPROV=?
+#XNRFPROV
+OK
+AT%ATTESTTOKEN
+AT#XNRFPROV
+```
+
+After the device is claimed in nRF Cloud, handle `#XNRFPROV: 1` by taking LTE
+offline with `AT+CFUN=4`, then handle `#XNRFPROV: 2` by restoring LTE with
+`AT+CFUN=1`. A status of `#XNRFPROV: 0` means provisioning completed or there
+were no pending commands. Then connect to nRF Cloud before starting assisted
+GNSS:
+
+```text
+AT#XNRFCLOUD=1
+AT#XGNSS=1,1,0,120
+```
+
+If credentials were provisioned by another process, A-GNSS can work without
+running `AT#XNRFPROV`; unassisted GNSS remains available with
+`AT#XGNSS=1,0,...`.
 
 ## DFU / UART Update Status
 

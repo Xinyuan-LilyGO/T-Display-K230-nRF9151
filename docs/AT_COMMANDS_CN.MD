@@ -146,10 +146,41 @@ CONFIG_SM_COAPC=y
 CONFIG_SM_GNSS=y
 CONFIG_SM_NRF_CLOUD=y
 CONFIG_NRF_CLOUD_AGNSS=y
+CONFIG_NRF_PROVISIONING=y
 ```
 
-也就是 SMS、MQTT、HTTP、CoAP、GNSS、nRF Cloud A-GNSS 相关命令组已编译进固件。
+也就是 SMS、MQTT、HTTP、CoAP、GNSS、nRF Cloud A-GNSS 和 nRF Device
+Provisioning 相关命令组已编译进固件。A-GNSS 仍然要求 modem 中存在有效的
+nRF Cloud 凭据，并且已通过 `AT#XNRFCLOUD=1` 连接云端；provisioning 负责为
+已 claim 的设备写入这些凭据，但它本身不是 GNSS 辅助模式。
 这些命令的详细语法由 Nordic 在 `third_party/ncs-serial-modem/doc/app/` 中维护。
+
+### nRF Cloud provisioning 与 A-GNSS
+
+K230 构建会同时加载 `k230_serial_modem.conf` 和
+`serial_modem_k230/nrf-device-provisioning.conf`，从而启用由主机控制的
+provisioning 流程：
+
+```text
+AT#XNRFPROV=?
+#XNRFPROV
+OK
+AT%ATTESTTOKEN
+AT#XNRFPROV
+```
+
+设备在 nRF Cloud 中完成 claim 后，收到 `#XNRFPROV: 1` 时使用
+`AT+CFUN=4` 关闭 LTE，收到 `#XNRFPROV: 2` 时使用 `AT+CFUN=1` 恢复 LTE。
+收到 `#XNRFPROV: 0` 表示 provisioning 完成或没有待处理命令。随后先连接
+nRF Cloud，再启动 A-GNSS：
+
+```text
+AT#XNRFCLOUD=1
+AT#XGNSS=1,1,0,120
+```
+
+如果凭据已经由其他流程写入 modem，A-GNSS 可以不执行
+`AT#XNRFPROV`；无辅助 GNSS 仍可使用 `AT#XGNSS=1,0,...`。
 
 ## DFU / UART 更新状态
 

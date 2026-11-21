@@ -15,6 +15,7 @@ else
 fi
 BOARD="${BOARD:-nrf9151dk/nrf9151/ns}"
 CONF="${CONF:-$PROFILE_DIR/k230_serial_modem.conf}"
+PROVISIONING_CONF="${PROVISIONING_CONF:-$PROFILE_DIR/nrf-device-provisioning.conf}"
 OVERLAY="${OVERLAY:-$PROFILE_DIR/k230_serial_modem.overlay}"
 
 if [[ ! -d "$NCS_ROOT/zephyr" ]]; then
@@ -29,6 +30,16 @@ if [[ ! -d "$UPSTREAM_SRC/app" ]]; then
 	echo "Serial Modem source not found: $UPSTREAM_SRC/app" >&2
 	echo "Initialize the bundled submodule first:" >&2
 	echo "  git submodule update --init --recursive third_party/ncs-serial-modem" >&2
+	exit 1
+fi
+
+if [[ ! -f "$CONF" ]]; then
+	echo "Serial Modem config not found: $CONF" >&2
+	exit 1
+fi
+
+if [[ ! -f "$PROVISIONING_CONF" ]]; then
+	echo "Provisioning config not found: $PROVISIONING_CONF" >&2
 	exit 1
 fi
 
@@ -62,7 +73,7 @@ fi
 
 cmake_args=(
 	-DZEPHYR_EXTRA_MODULES="$WORK_SRC"
-	-DEXTRA_CONF_FILE="$CONF"
+	-DEXTRA_CONF_FILE="$CONF;$PROVISIONING_CONF"
 	-DEXTRA_DTC_OVERLAY_FILE="$OVERLAY"
 )
 
