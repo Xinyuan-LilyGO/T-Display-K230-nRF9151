@@ -1,11 +1,11 @@
 diff --git a/app/VERSION b/app/VERSION
-index 7d9a3d1..d9ea82c 100644
+index 7d9a3d1..12603d5 100644
 --- a/app/VERSION
 +++ b/app/VERSION
 @@ -1,5 +1,5 @@
  VERSION_MAJOR = 1
  VERSION_MINOR = 99
 -PATCHLEVEL = 1
-+PATCHLEVEL = 2
++PATCHLEVEL = 3
  VERSION_TWEAK = 0
  EXTRAVERSION =
