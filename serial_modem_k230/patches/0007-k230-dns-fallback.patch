@@ -1,0 +1,85 @@
+--- a/app/Kconfig
++++ b/app/Kconfig
+@@ -91,6 +91,25 @@
+ 	  UART2 is monitored externally and K230 sends AT commands on UART1.
+ 	  Disable this after the physical UART link is confirmed.
+ 
++config SM_K230_DNS_FALLBACK
++	bool "K230 modem socket DNS fallback"
++	default n
++	depends on NRF_MODEM_LIB
++	help
++	  Configure a fallback DNS server for modem-offloaded socket DNS queries
++	  when the cellular network does not provide DNS addresses in the PDP
++	  context.
++
++if SM_K230_DNS_FALLBACK
++
++config SM_K230_DNS_FALLBACK_ADDRESS
++	string "K230 modem socket IPv4 DNS fallback address"
++	default "223.5.5.5"
++	help
++	  IPv4 address used by the nRF modem as a DNS fallback.
++
++endif
++
+ config SM_URC_BUFFER_SIZE
+ 	int "TX buffer size for unsolicited result codes (URC)"
+ 	default 4096
+--- a/app/src/main.c
++++ b/app/src/main.c
+@@ -6,6 +6,7 @@
+ #include <zephyr/logging/log.h>
+ #include <zephyr/kernel.h>
+ #include <nrf_modem.h>
++#include <nrf_socket.h>
+ #include <hal/nrf_power.h>
+ #include <modem/nrf_modem_lib.h>
+ #include <zephyr/dfu/mcuboot.h>
+@@ -270,6 +271,33 @@
+ 	return 0;
+ }
+ 
++#if defined(CONFIG_SM_K230_DNS_FALLBACK)
++static int k230_dns_fallback_init(void)
++{
++	struct nrf_in_addr dns_addr;
++	int ret;
++
++	ret = nrf_inet_pton(NRF_AF_INET, CONFIG_SM_K230_DNS_FALLBACK_ADDRESS,
++				    &dns_addr.s_addr);
++	if (ret != 1) {
++		LOG_ERR("Invalid DNS fallback address: %s",
++			CONFIG_SM_K230_DNS_FALLBACK_ADDRESS);
++		return -EINVAL;
++	}
++
++	ret = nrf_setdnsaddr(NRF_AF_INET, &dns_addr, sizeof(dns_addr));
++	if (ret) {
++		LOG_WRN("Failed to set DNS fallback %s: %d",
++			 CONFIG_SM_K230_DNS_FALLBACK_ADDRESS, ret);
++		return ret;
++	}
++
++	LOG_INF("DNS fallback configured: %s",
++		CONFIG_SM_K230_DNS_FALLBACK_ADDRESS);
++	return 0;
++}
++#endif
++
+ void lte_auto_connect(void)
+ {
+ #if defined(CONFIG_SM_AUTO_CONNECT)
+@@ -386,6 +414,12 @@
+ 		}
+ 	}
+ 
++#if defined(CONFIG_SM_K230_DNS_FALLBACK)
++	if (ret == 0) {
++		(void)k230_dns_fallback_init();
++	}
++#endif
++
+ 	sm_fota_mcuboot_bl_boot_check();
+ 
+ 	check_app_fota_status();
