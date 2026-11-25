@@ -6,6 +6,8 @@
 
 [English](./README.MD) | [中文](./README_CN.MD)
 
+[版本变更记录](./CHANGELOG_CN.MD)
+
 
 这个仓库保存 LILYGO T-Display K230 项目当前使用的 nRF9151 固件源码、overlay、补丁和 K230 侧测试脚本
 
@@ -131,6 +133,8 @@ serial_modem_k230/patches/0002-k230-optional-xdfu.patch
 serial_modem_k230/patches/0003-k230-uart-diag.patch
 serial_modem_k230/patches/0004-k230-gnss-nmea-urc-worker.patch
 serial_modem_k230/patches/0005-k230-led-at-control.patch
+serial_modem_k230/patches/0006-k230-application-version-1.99.3.patch
+serial_modem_k230/patches/0007-k230-dns-fallback.patch
 ```
 
 构建还会加载 profile 自带的 `nrf-device-provisioning.conf` overlay，用于启用

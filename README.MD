@@ -6,6 +6,8 @@
 
 [English](./README.MD) | [中文](./README_CN.MD)
 
+[Changelog](./CHANGELOG.MD)
+
 This repository stores the nRF9151 firmware source code, overlay, patches, and K230-side test scripts currently used by the LILYGO T-Display K230 project.
 
 ## Hardware
@@ -134,6 +136,8 @@ serial_modem_k230/patches/0002-k230-optional-xdfu.patch
 serial_modem_k230/patches/0003-k230-uart-diag.patch
 serial_modem_k230/patches/0004-k230-gnss-nmea-urc-worker.patch
 serial_modem_k230/patches/0005-k230-led-at-control.patch
+serial_modem_k230/patches/0006-k230-application-version-1.99.3.patch
+serial_modem_k230/patches/0007-k230-dns-fallback.patch
 ```
 
 The build also loads the profile's `nrf-device-provisioning.conf` overlay.
